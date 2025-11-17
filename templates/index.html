@@ -54,7 +54,6 @@
             width: 100%;
             height: 100%;
         }
-        /* Folium haritaları iframe içinde gelir, bu iframe'in %100 kaplamasını sağlar */
         .map-wrapper > iframe {
             width: 100%;
             height: 100%;
@@ -79,7 +78,7 @@
         #right-sidebar {
             width: 300px;
             position: absolute;
-            right: -320px; /* Başlangıçta gizli (genişlik + biraz boşluk) */
+            right: -320px; /* Başlangıçta gizli */
             top: 0;
             height: 100vh;
             background: white;
@@ -87,7 +86,7 @@
             box-shadow: -2px 0 5px rgba(0,0,0,0.1);
             transition: right 0.3s ease-in-out;
             z-index: 1000;
-            box-sizing: border-box; /* Padding'i genişliğe dahil et */
+            box-sizing: border-box; 
         }
         #right-sidebar.open {
             right: 0; /* 'open' class'ı eklenince görünür yap */
@@ -95,7 +94,7 @@
         #right-sidebar h2 {
             margin-top: 0;
         }
-        form label { display: block; margin-top: 10px; }
+        form label { display: block; margin-top: 15px; }
         form select, form input[type="file"], form button {
             width: 100%;
             padding: 8px;
@@ -124,7 +123,7 @@
             <li class="map-nav-link" data-map="nem">Harita 2: Nem Puanı</li>
             <li class="map-nav-link" data-map="egim">Harita 3: Eğim Puanı</li>
             {% else %}
-            <li>Analiz için CSV yükleyin.</li>
+            <li>Analiz için veri yükleyin.</li>
             {% endif %}
         </ul>
     </div>
@@ -132,7 +131,7 @@
     <div id="main-content">
         <button id="toggle-panel-button">Kontrol Paneli</button>
 
-        <div id="map-base" class="map-wrapper active-map">
+        <div id="map-base" class.map-wrapper active-map">
             {% if maps.base %}{{ maps.base | safe }}{% endif %}
         </div>
         
@@ -162,30 +161,36 @@
     </div>
 
     <div id="right-sidebar">
-        <h2>Kontrol Paneli</h2>
-        <form method="POST" enctype="multipart-form-data">
+        <h2>Veri Yükleme Paneli</h2>
+        <form method="POST" enctype="multipart/form-data">
+            
             <label for="ilce">İlçe Seçin:</label>
             <select name="ilce" id="ilce" required>
                 {% for ilce in ilceler %}
                     <option value="{{ ilce }}">{{ ilce }}</option>
                 {% endfor %}
             </select>
+
+            <label for="data_type">Yüklenecek Veri Tipi:</label>
+            <select name="data_type" id="data_type" required>
+                <option value="">Seçiniz...</option>
+                <option value="sicaklik">Sıcaklık (Radyasyon)</option>
+                <option value="nem">Nem</option>
+                <option value="egim">Eğim</option>
+            </select>
             
-            <label for="csv_file">Nokta Veri (.csv) Yükle:</label>
+            <label for="csv_file">Veri Dosyası (.csv):</label>
             <p style="font-size: 0.8em; color: #555;">
-                CSV formatı: <strong>lat,lon,sicaklik_radyasyon,nem,egim</strong>
+                CSV formatı: <strong>lat,lon,deger</strong>
             </p>
             <input type="file" name="csv_file" id="csv_file" accept=".csv" required>
             
-            <button type="submit">Analiz Et</button>
+            <button type="submit">Veritabanına Yükle</button>
         </form>
     </div>
 
     <script>
-        // Sayfa yüklendiğinde çalışacak kod
         document.addEventListener('DOMContentLoaded', function() {
-
-            // --- 1. Sağ Paneli Açma/Kapama ---
             const toggleButton = document.getElementById('toggle-panel-button');
             const rightSidebar = document.getElementById('right-sidebar');
 
@@ -193,43 +198,28 @@
                 rightSidebar.classList.toggle('open');
             });
 
-            // --- 2. Harita Sekmeleri Arası Geçiş ---
             const navLinks = document.querySelectorAll('.map-nav-link');
             const mapWrappers = document.querySelectorAll('.map-wrapper');
 
-            // Tüm linkler için tıklama olayı ekle
             navLinks.forEach(link => {
                 link.addEventListener('click', function() {
-                    const mapIdToShow = this.getAttribute('data-map'); // 'toplu', 'nem' etc.
-
-                    // Tüm haritaları gizle
+                    const mapIdToShow = this.getAttribute('data-map');
                     mapWrappers.forEach(wrapper => {
                         wrapper.style.display = 'none';
                     });
-
-                    // Tüm linklerin 'active' class'ını kaldır
                     navLinks.forEach(nav => {
                         nav.classList.remove('active');
                     });
-
-                    // Sadece tıklanan haritayı göster
                     document.getElementById('map-' + mapIdToShow).style.display = 'block';
-                    
-                    // Sadece tıklanan linki 'active' yap
                     this.classList.add('active');
                 });
             });
 
-            // --- 3. Başlangıç Haritasını Ayarla ---
-            // Eğer 'toplu' haritası (analiz sonucu) varsa onu, yoksa 'base' haritasını göster
             {% if maps.toplu %}
-                // Analiz yapılmışsa 'Genel Skor' haritasını aktif et
                 document.querySelector('.map-nav-link[data-map="toplu"]').click();
             {% else %}
-                // Sayfa ilk açıldığında 'Ana Harita'yı aktif et
                 document.querySelector('.map-nav-link[data-map="base"]').click();
             {% endif %}
-
         });
     </script>
 
