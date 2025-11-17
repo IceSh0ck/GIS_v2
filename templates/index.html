@@ -1,61 +1,237 @@
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-M">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ankara GES Uygunluk Analizi</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1, h2 { color: #333; }
-        .container { display: flex; }
-        .panel { width: 30%; padding-right: 20px; }
-        .map-container { width: 70%; }
-        .map { border: 1px solid #ccc; margin-bottom: 20px; }
-        form { background: #f4f4f4; padding: 15px; border-radius: 8px; }
+        /* --- Temel Sayfa Düzeni --- */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* --- 1. Sol Menü (Harita Seçimi) --- */
+        #left-sidebar {
+            width: 250px;
+            background: #f4f4f4;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+        #left-sidebar h2 {
+            margin-top: 0;
+        }
+        #left-sidebar ul {
+            list-style: none;
+            padding: 0;
+        }
+        #left-sidebar li {
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 5px;
+            margin-bottom: 5px;
+        }
+        #left-sidebar li:hover {
+            background: #ddd;
+        }
+        #left-sidebar li.active {
+            background: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        /* --- 2. Ana Harita Alanı (Ortası) --- */
+        #main-content {
+            flex-grow: 1; /* Kalan tüm alanı kapla */
+            position: relative;
+        }
+        .map-wrapper {
+            width: 100%;
+            height: 100%;
+        }
+        /* Folium haritaları iframe içinde gelir, bu iframe'in %100 kaplamasını sağlar */
+        .map-wrapper > iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* --- 3. Sağ Gizli Kontrol Paneli --- */
+        #toggle-panel-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 1001;
+            padding: 10px 15px;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        #right-sidebar {
+            width: 300px;
+            position: absolute;
+            right: -320px; /* Başlangıçta gizli (genişlik + biraz boşluk) */
+            top: 0;
+            height: 100vh;
+            background: white;
+            padding: 20px;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.1);
+            transition: right 0.3s ease-in-out;
+            z-index: 1000;
+            box-sizing: border-box; /* Padding'i genişliğe dahil et */
+        }
+        #right-sidebar.open {
+            right: 0; /* 'open' class'ı eklenince görünür yap */
+        }
+        #right-sidebar h2 {
+            margin-top: 0;
+        }
+        form label { display: block; margin-top: 10px; }
+        form select, form input[type="file"], form button {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            box-sizing: border-box;
+        }
+        form button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-top: 20px;
+        }
     </style>
 </head>
 <body>
-    <h1>Ankara GES Uygunluk Analizi</h1>
-    <div class="container">
-        <div class="panel">
-            <h2>Kontrol Paneli</h2>
-            <form method="POST" enctype="multipart/form-data">
-                <label for="ilce">İlçe Seçin:</label>
-                <select name="ilce" id="ilce" required>
-                    {% for ilce in ilceler %}
-                        <option value="{{ ilce }}">{{ ilce }}</option>
-                    {% endfor %}
-                </select>
-                <br><br>
-                <label for="csv_file">Nokta Veri (.csv) Yükle:</label>
-                <p style="font-size: 0.8em; color: #555;">
-                    CSV formatı: <strong>lat,lon,sicaklik_radyasyon,nem,egim</strong>
-                </p>
-                <input type="file" name="csv_file" accept=".csv" required>
-                <br><br>
-                <button type="submit">Analiz Et</button>
-            </form>
-        </div>
 
-        <div class="map-container">
-            {% if maps %}
-                <h2>Harita 4: Genel Uygunluk Skoru (Ağırlıklı)</h2>
-                <div class="map">{{ maps.toplu | safe }}</div>
-
-                <h2>Harita 1: Sıcaklık (Radyasyon) Puanı</h2>
-                <div class="map">{{ maps.sicaklik | safe }}</div>
-                
-                <h2>Harita 2: Nem Puanı</h2>
-                <div class="map">{{ maps.nem | safe }}</div>
-
-                <h2>Harita 3: Eğim Puanı</h2>
-                <div class="map">{{ maps.egim | safe }}</div>
+    <div id="left-sidebar">
+        <h2>Harita Katmanları</h2>
+        <ul>
+            <li class="map-nav-link" data-map="base">Ana Harita (İlçe Sınırları)</li>
+            
+            {% if maps.toplu %}
+            <li class="map-nav-link" data-map="toplu">Harita 4: Genel Uygunluk Skoru</li>
+            <li class="map-nav-link" data-map="sicaklik">Harita 1: Sıcaklık (Radyasyon)</li>
+            <li class="map-nav-link" data-map="nem">Harita 2: Nem Puanı</li>
+            <li class="map-nav-link" data-map="egim">Harita 3: Eğim Puanı</li>
             {% else %}
-                <h2>Harita</h2>
-                <p>Analiz için lütfen soldaki panelden bir .csv dosyası yükleyin.</p>
-                <div class="map">{{ maps.base | safe }}</div>
+            <li>Analiz için CSV yükleyin.</li>
             {% endif %}
-        </div>
+        </ul>
     </div>
+
+    <div id="main-content">
+        <button id="toggle-panel-button">Kontrol Paneli</button>
+
+        <div id="map-base" class="map-wrapper active-map">
+            {% if maps.base %}{{ maps.base | safe }}{% endif %}
+        </div>
+        
+        {% if maps.toplu %}
+        <div id="map-toplu" class="map-wrapper" style="display: none;">
+            {{ maps.toplu | safe }}
+        </div>
+        {% endif %}
+
+        {% if maps.sicaklik %}
+        <div id="map-sicaklik" class="map-wrapper" style="display: none;">
+            {{ maps.sicaklik | safe }}
+        </div>
+        {% endif %}
+
+        {% if maps.nem %}
+        <div id="map-nem" class="map-wrapper" style="display: none;">
+            {{ maps.nem | safe }}
+        </div>
+        {% endif %}
+        
+        {% if maps.egim %}
+        <div id="map-egim" class="map-wrapper" style="display: none;">
+            {{ maps.egim | safe }}
+        </div>
+        {% endif %}
+    </div>
+
+    <div id="right-sidebar">
+        <h2>Kontrol Paneli</h2>
+        <form method="POST" enctype="multipart/form-data">
+            <label for="ilce">İlçe Seçin:</label>
+            <select name="ilce" id="ilce" required>
+                {% for ilce in ilceler %}
+                    <option value="{{ ilce }}">{{ ilce }}</option>
+                {% endfor %}
+            </select>
+            
+            <label for="csv_file">Nokta Veri (.csv) Yükle:</label>
+            <p style="font-size: 0.8em; color: #555;">
+                CSV formatı: <strong>lat,lon,sicaklik_radyasyon,nem,egim</strong>
+            </p>
+            <input type="file" name="csv_file" id="csv_file" accept=".csv" required>
+            
+            <button type="submit">Analiz Et</button>
+        </form>
+    </div>
+
+    <script>
+        // Sayfa yüklendiğinde çalışacak kod
+        document.addEventListener('DOMContentLoaded', function() {
+
+            // --- 1. Sağ Paneli Açma/Kapama ---
+            const toggleButton = document.getElementById('toggle-panel-button');
+            const rightSidebar = document.getElementById('right-sidebar');
+
+            toggleButton.addEventListener('click', function() {
+                rightSidebar.classList.toggle('open');
+            });
+
+            // --- 2. Harita Sekmeleri Arası Geçiş ---
+            const navLinks = document.querySelectorAll('.map-nav-link');
+            const mapWrappers = document.querySelectorAll('.map-wrapper');
+
+            // Tüm linkler için tıklama olayı ekle
+            navLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    const mapIdToShow = this.getAttribute('data-map'); // 'toplu', 'nem' etc.
+
+                    // Tüm haritaları gizle
+                    mapWrappers.forEach(wrapper => {
+                        wrapper.style.display = 'none';
+                    });
+
+                    // Tüm linklerin 'active' class'ını kaldır
+                    navLinks.forEach(nav => {
+                        nav.classList.remove('active');
+                    });
+
+                    // Sadece tıklanan haritayı göster
+                    document.getElementById('map-' + mapIdToShow).style.display = 'block';
+                    
+                    // Sadece tıklanan linki 'active' yap
+                    this.classList.add('active');
+                });
+            });
+
+            // --- 3. Başlangıç Haritasını Ayarla ---
+            // Eğer 'toplu' haritası (analiz sonucu) varsa onu, yoksa 'base' haritasını göster
+            {% if maps.toplu %}
+                // Analiz yapılmışsa 'Genel Skor' haritasını aktif et
+                document.querySelector('.map-nav-link[data-map="toplu"]').click();
+            {% else %}
+                // Sayfa ilk açıldığında 'Ana Harita'yı aktif et
+                document.querySelector('.map-nav-link[data-map="base"]').click();
+            {% endif %}
+
+        });
+    </script>
+
 </body>
 </html>
