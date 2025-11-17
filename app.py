@@ -73,39 +73,36 @@ ILCE_LISTESI = [
 ]
 
 # --- Ankara İlçe Verisini SADECE 1 KEZ YÜKLE ---
+# ** DÜZELTME: Hatalı optimizasyonu (folium.GeoJson) kaldırdık **
+# Sadece Geopandas DataFrame'ini (gdf) hafızaya alıyoruz.
 try:
     geojson_path = os.path.join(app.static_folder, 'ankara_ilceler.geojson')
     ankara_ilceler_gdf = gpd.read_file(geojson_path)
     ankara_ilceler_gdf = ankara_ilceler_gdf.set_crs("EPSG:4326")
-    
-    # ** HIZLANDIRMA GÜNCELLEMESİ: **
-    # GeoJSON katmanını 1 kez oluşturup hafızada tutuyoruz.
-    ankara_boundaries_layer = folium.GeoJson(
-        ankara_ilceler_gdf,
-        name='İlçe Sınırları',
-        style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1, 'fillOpacity': 0.1}
-    )
-    print("Ankara ilçe sınırları hafızaya yüklendi.")
+    print("Ankara ilçe sınırları (GDF) hafızaya yüklendi.")
     
 except Exception as e:
     print(f"UYARI: 'static/ankara_ilceler.geojson' dosyası okunamadı. Hata: {e}")
-    ankara_boundaries_layer = None
+    ankara_ilceler_gdf = None # Hatalı optimizasyon kaldırıldı
 # ------------------------------------
 
 def create_base_map():
     m = folium.Map(location=[39.93, 32.85], zoom_start=9)
-    # ** HIZLANDIRMA GÜNCELLEMESİ: **
-    # Artık dosyayı okumuyor, hafızadaki hazır katmanı ekliyoruz.
-    if ankara_boundaries_layer is not None:
-        ankara_boundaries_layer.add_to(m)
+    # ** DÜZELTME: "Yavaş" ama çalışan koda geri döndük **
+    # Her harita için hafızadaki GDF'ten YENİ bir katman oluşturuyoruz.
+    # Bu, HTML'in büyük olmasına neden olur, ancak sınırların görünmesini sağlar.
+    if ankara_ilceler_gdf is not None:
+        folium.GeoJson(
+            ankara_ilceler_gdf,
+            name='İlçe Sınırları',
+            style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1, 'fillOpacity': 0.1}
+        ).add_to(m)
     return m
 # ------------------------------------
 
-# ** GÜNCELLEME: 'HEAD' metodu eklendi **
 @app.route('/', methods=['GET', 'POST', 'HEAD'])
 def index():
     
-    # ** YENİ EKLENDİ: Log kirliliğini ve gereksiz çalışmayı önle **
     # UptimeRobot ve Render sağlık kontrolleri (HEAD) için anında yanıt ver.
     if request.method == 'HEAD':
         return "", 200 # Boş bir 'OK' yanıtı
@@ -192,7 +189,6 @@ def index():
                 folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_egim']), fill=True, fill_opacity=0.8, tooltip=tooltip_egim).add_to(m_egim)
                 folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['Genel_Skor']), fill=True, fill_opacity=0.8, tooltip=tooltip_toplu).add_to(m_toplu)
         else:
-            # ** GÜNCELLEME: Bu print'i sadece GET isteklerinde göster **
             print("Veritabanında veri yok. Sadece boş haritalar oluşturuldu.")
 
         map_htmls['base'] = m_base._repr_html_()
