@@ -3,4 +3,4 @@ gunicorn
 pandas
 geopandas
 folium
-supabase-py
+supabase
