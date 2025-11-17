@@ -43,7 +43,7 @@ def puanla_egim(deger): # 'deger' derece/yüzde
     if deger >= 0 and deger <= 5: return 5 # İdeal eğim
     if deger > 5 and deger <= 10: return 4
     if deger > 10 and deger <= 15: return 3
-    if deger > 15 and deger <= 20: return 2
+    if deger > 15 and egim <= 20: return 2
     return 1
 
 PUANLAMA_FONKSIYONLARI = {
@@ -72,31 +72,44 @@ ILCE_LISTESI = [
     "Polatlı","Pursaklar","Şereflikoçhisar","Sincan","Yenimahalle"
 ]
 
-# --- Ankara İlçe Verisini Yükle ---
+# --- Ankara İlçe Verisini SADECE 1 KEZ YÜKLE ---
 try:
     geojson_path = os.path.join(app.static_folder, 'ankara_ilceler.geojson')
     ankara_ilceler_gdf = gpd.read_file(geojson_path)
-    # ** HATA DÜZELTMESİ: EPSG:46 -> EPSG:4326 olarak düzeltildi **
     ankara_ilceler_gdf = ankara_ilceler_gdf.set_crs("EPSG:4326")
+    
+    # ** HIZLANDIRMA GÜNCELLEMESİ: **
+    # GeoJSON katmanını 1 kez oluşturup hafızada tutuyoruz.
+    ankara_boundaries_layer = folium.GeoJson(
+        ankara_ilceler_gdf,
+        name='İlçe Sınırları',
+        style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1, 'fillOpacity': 0.1}
+    )
+    print("Ankara ilçe sınırları hafızaya yüklendi.")
+    
 except Exception as e:
     print(f"UYARI: 'static/ankara_ilceler.geojson' dosyası okunamadı. Hata: {e}")
-    ankara_ilceler_gdf = None
+    ankara_boundaries_layer = None
 # ------------------------------------
 
 def create_base_map():
     m = folium.Map(location=[39.93, 32.85], zoom_start=9)
-    if ankara_ilceler_gdf is not None:
-        folium.GeoJson(
-            ankara_ilceler_gdf,
-            name='İlçe Sınırları',
-            style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1, 'fillOpacity': 0.1}
-        ).add_to(m)
+    # ** HIZLANDIRMA GÜNCELLEMESİ: **
+    # Artık dosyayı okumuyor, hafızadaki hazır katmanı ekliyoruz.
+    if ankara_boundaries_layer is not None:
+        ankara_boundaries_layer.add_to(m)
     return m
 # ------------------------------------
 
-@app.route('/', methods=['GET', 'POST'])
+# ** GÜNCELLEME: 'HEAD' metodu eklendi **
+@app.route('/', methods=['GET', 'POST', 'HEAD'])
 def index():
     
+    # ** YENİ EKLENDİ: Log kirliliğini ve gereksiz çalışmayı önle **
+    # UptimeRobot ve Render sağlık kontrolleri (HEAD) için anında yanıt ver.
+    if request.method == 'HEAD':
+        return "", 200 # Boş bir 'OK' yanıtı
+
     # --- VERİ YÜKLEME (POST) ---
     if request.method == 'POST':
         if not supabase: 
@@ -145,37 +158,29 @@ def index():
     map_htmls = {}
     
     try:
-        # ** MANTIK DÜZELTMESİ: 5 haritayı da her zaman oluştur **
         m_base = create_base_map()
         m_sicaklik = create_base_map()
         m_nem = create_base_map()
         m_egim = create_base_map()
         m_toplu = create_base_map()
         
-        # Supabase'den tüm verileri çek
         df_data = pd.DataFrame() 
         if supabase:
             response = supabase.table('ges_noktalar').select("*").execute()
             if response.data:
                 df_data = pd.DataFrame(response.data)
                 
-        # ** MANTIK DÜZELTMESİ: 'if df_data.empty' kontrolü kaldırıldı **
-        # Veri olmasa bile devam et, sadece haritalara nokta ekleme.
-        
         if not df_data.empty:
-            # Puan sütunları yoksa oluştur ve 'None' olan yerleri 0 yap
             if 'puan_sicaklik' not in df_data.columns: df_data['puan_sicaklik'] = 0
             if 'puan_nem' not in df_data.columns: df_data['puan_nem'] = 0
             if 'puan_egim' not in df_data.columns: df_data['puan_egim'] = 0
             
             df_data.fillna(0, inplace=True)
 
-            # Genel Skoru Hesapla
             df_data['Genel_Skor'] = (df_data['puan_sicaklik'] * AGIRLIK_SICAKLIK) + \
                                     (df_data['puan_nem'] * AGIRLIK_NEM) + \
                                     (df_data['puan_egim'] * AGIRLIK_EGIM)
 
-            # Noktaları haritalara ekle
             for _, row in df_data.iterrows():
                 tooltip_sicaklik = f"Sıcaklık Puanı: {row['puan_sicaklik']}"
                 tooltip_nem = f"Nem Puanı: {row['puan_nem']}"
@@ -187,9 +192,9 @@ def index():
                 folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_egim']), fill=True, fill_opacity=0.8, tooltip=tooltip_egim).add_to(m_egim)
                 folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['Genel_Skor']), fill=True, fill_opacity=0.8, tooltip=tooltip_toplu).add_to(m_toplu)
         else:
+            # ** GÜNCELLEME: Bu print'i sadece GET isteklerinde göster **
             print("Veritabanında veri yok. Sadece boş haritalar oluşturuldu.")
 
-        # ** MANTIK DÜZELTMESİ: 5 haritayı da her zaman HTML'e çevir **
         map_htmls['base'] = m_base._repr_html_()
         map_htmls['sicaklik'] = m_sicaklik._repr_html_()
         map_htmls['nem'] = m_nem._repr_html_()
@@ -198,13 +203,11 @@ def index():
 
     except Exception as e:
         print(f"HATA: Haritalar oluşturulamadı. Hata: {e}")
-        # Hata olursa en azından ana haritayı göster
         if 'base' not in map_htmls:
              m_base = create_base_map()
              map_htmls['base'] = m_base._repr_html_()
         return render_template('index.html', ilceler=ILCE_LISTESI, maps=map_htmls, error=str(e))
         
-    # Her şey başarılıysa, tüm haritaları göster
     return render_template('index.html', ilceler=ILCE_LISTESI, maps=map_htmls)
 
 if __name__ == '__main__':
