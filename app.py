@@ -57,6 +57,13 @@ ILCE_LISTESI = [
 try:
     geojson_path = os.path.join(app.static_folder, 'ankara_ilceler.geojson')
     ankara_ilceler_gdf = gpd.read_file(geojson_path)
+    
+    # --- HATA ÇÖZÜMÜ (CRS TANIMLAMA) ---
+    # Gelen TopoJSON dosyasında CRS (Koordinat Referans Sistemi) bilgisi eksik.
+    # Folium'un haritayı çizebilmesi için verinin CRS'ini manuel olarak EPSG:4326 (standart enlem/boylam) olarak tanımlıyoruz.
+    ankara_ilceler_gdf = ankara_ilceler_gdf.set_crs("EPSG:4326")
+    # ------------------------------------
+
 except Exception as e:
     print(f"UYARI: 'static/ankara_ilceler.geojson' dosyası okunamadı veya bulunamadı. Haritada ilçe sınırları GÖRÜNMEYECEK. Hata: {e}")
     ankara_ilceler_gdf = None # Kodun çökmesini engelle, None olarak devam et
@@ -112,6 +119,7 @@ def index():
                     folium.GeoJson(ankara_ilceler_gdf, style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1}).add_to(m_nem)
                     folium.GeoJson(ankara_ilceler_gdf, style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1}).add_to(m_egim)
                     folium.GeoJson(ankara_ilceler_gdf, style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1}).add_to(m_toplu)
+
 
                 # Her bir noktayı haritalara puanına göre işle
                 for _, row in df.iterrows():
