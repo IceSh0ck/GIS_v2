@@ -1,1 +1,61 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ankara GES Uygunluk Analizi</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1, h2 { color: #333; }
+        .container { display: flex; }
+        .panel { width: 30%; padding-right: 20px; }
+        .map-container { width: 70%; }
+        .map { border: 1px solid #ccc; margin-bottom: 20px; }
+        form { background: #f4f4f4; padding: 15px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>Ankara GES Uygunluk Analizi</h1>
+    <div class="container">
+        <div class="panel">
+            <h2>Kontrol Paneli</h2>
+            <form method="POST" enctype="multipart/form-data">
+                <label for="ilce">İlçe Seçin:</label>
+                <select name="ilce" id="ilce" required>
+                    {% for ilce in ilceler %}
+                        <option value="{{ ilce }}">{{ ilce }}</option>
+                    {% endfor %}
+                </select>
+                <br><br>
+                <label for="csv_file">Nokta Veri (.csv) Yükle:</label>
+                <p style="font-size: 0.8em; color: #555;">
+                    CSV formatı: <strong>lat,lon,sicaklik_radyasyon,nem,egim</strong>
+                </p>
+                <input type="file" name="csv_file" accept=".csv" required>
+                <br><br>
+                <button type="submit">Analiz Et</button>
+            </form>
+        </div>
 
+        <div class="map-container">
+            {% if maps %}
+                <h2>Harita 4: Genel Uygunluk Skoru (Ağırlıklı)</h2>
+                <div class="map">{{ maps.toplu | safe }}</div>
+
+                <h2>Harita 1: Sıcaklık (Radyasyon) Puanı</h2>
+                <div class="map">{{ maps.sicaklik | safe }}</div>
+                
+                <h2>Harita 2: Nem Puanı</h2>
+                <div class="map">{{ maps.nem | safe }}</div>
+
+                <h2>Harita 3: Eğim Puanı</h2>
+                <div class="map">{{ maps.egim | safe }}</div>
+            {% else %}
+                <h2>Harita</h2>
+                <p>Analiz için lütfen soldaki panelden bir .csv dosyası yükleyin.</p>
+                <div class="map">{{ maps.base | safe }}</div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
