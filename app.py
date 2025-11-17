@@ -76,7 +76,8 @@ ILCE_LISTESI = [
 try:
     geojson_path = os.path.join(app.static_folder, 'ankara_ilceler.geojson')
     ankara_ilceler_gdf = gpd.read_file(geojson_path)
-    ankara_ilceler_gdf = ankara_ilceler_gdf.set_crs("EPSG:46")
+    # ** HATA DÜZELTMESİ: EPSG:46 -> EPSG:4326 olarak düzeltildi **
+    ankara_ilceler_gdf = ankara_ilceler_gdf.set_crs("EPSG:4326")
 except Exception as e:
     print(f"UYARI: 'static/ankara_ilceler.geojson' dosyası okunamadı. Hata: {e}")
     ankara_ilceler_gdf = None
@@ -144,9 +145,12 @@ def index():
     map_htmls = {}
     
     try:
-        # ** DÜZELTME: Ana harita oluşturma işlemi try bloğuna alındı **
+        # ** MANTIK DÜZELTMESİ: 5 haritayı da her zaman oluştur **
         m_base = create_base_map()
-        map_htmls['base'] = m_base._repr_html_()
+        m_sicaklik = create_base_map()
+        m_nem = create_base_map()
+        m_egim = create_base_map()
+        m_toplu = create_base_map()
         
         # Supabase'den tüm verileri çek
         df_data = pd.DataFrame() 
@@ -155,40 +159,38 @@ def index():
             if response.data:
                 df_data = pd.DataFrame(response.data)
                 
-        if df_data.empty:
-            print("Veritabanında hiç veri bulunamadı. Sadece ana harita gösteriliyor.")
-            return render_template('index.html', ilceler=ILCE_LISTESI, maps=map_htmls)
-
-        # Puan sütunları yoksa oluştur ve 'None' olan yerleri 0 yap
-        if 'puan_sicaklik' not in df_data.columns: df_data['puan_sicaklik'] = 0
-        if 'puan_nem' not in df_data.columns: df_data['puan_nem'] = 0
-        if 'puan_egim' not in df_data.columns: df_data['puan_egim'] = 0
+        # ** MANTIK DÜZELTMESİ: 'if df_data.empty' kontrolü kaldırıldı **
+        # Veri olmasa bile devam et, sadece haritalara nokta ekleme.
         
-        df_data.fillna(0, inplace=True)
+        if not df_data.empty:
+            # Puan sütunları yoksa oluştur ve 'None' olan yerleri 0 yap
+            if 'puan_sicaklik' not in df_data.columns: df_data['puan_sicaklik'] = 0
+            if 'puan_nem' not in df_data.columns: df_data['puan_nem'] = 0
+            if 'puan_egim' not in df_data.columns: df_data['puan_egim'] = 0
+            
+            df_data.fillna(0, inplace=True)
 
-        # Genel Skoru Hesapla
-        df_data['Genel_Skor'] = (df_data['puan_sicaklik'] * AGIRLIK_SICAKLIK) + \
-                                (df_data['puan_nem'] * AGIRLIK_NEM) + \
-                                (df_data['puan_egim'] * AGIRLIK_EGIM)
+            # Genel Skoru Hesapla
+            df_data['Genel_Skor'] = (df_data['puan_sicaklik'] * AGIRLIK_SICAKLIK) + \
+                                    (df_data['puan_nem'] * AGIRLIK_NEM) + \
+                                    (df_data['puan_egim'] * AGIRLIK_EGIM)
 
-        # 4 Haritayı da oluştur
-        m_sicaklik = create_base_map()
-        m_nem = create_base_map()
-        m_egim = create_base_map()
-        m_toplu = create_base_map()
+            # Noktaları haritalara ekle
+            for _, row in df_data.iterrows():
+                tooltip_sicaklik = f"Sıcaklık Puanı: {row['puan_sicaklik']}"
+                tooltip_nem = f"Nem Puanı: {row['puan_nem']}"
+                tooltip_egim = f"Eğim Puanı: {row['puan_egim']}"
+                tooltip_toplu = f"Genel Skor: {row['Genel_Skor']:.2f}<br>Sıc P: {row['puan_sicaklik']}<br>Nem P: {row['puan_nem']}<br>Eğim P: {row['puan_egim']}"
 
-        for _, row in df_data.iterrows():
-            tooltip_sicaklik = f"Sıcaklık Puanı: {row['puan_sicaklik']}"
-            tooltip_nem = f"Nem Puanı: {row['puan_nem']}"
-            tooltip_egim = f"Eğim Puanı: {row['puan_egim']}"
-            tooltip_toplu = f"Genel Skor: {row['Genel_Skor']:.2f}<br>Sıc P: {row['puan_sicaklik']}<br>Nem P: {row['puan_nem']}<br>Eğim P: {row['puan_egim']}"
+                folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_sicaklik']), fill=True, fill_opacity=0.8, tooltip=tooltip_sicaklik).add_to(m_sicaklik)
+                folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_nem']), fill=True, fill_opacity=0.8, tooltip=tooltip_nem).add_to(m_nem)
+                folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_egim']), fill=True, fill_opacity=0.8, tooltip=tooltip_egim).add_to(m_egim)
+                folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['Genel_Skor']), fill=True, fill_opacity=0.8, tooltip=tooltip_toplu).add_to(m_toplu)
+        else:
+            print("Veritabanında veri yok. Sadece boş haritalar oluşturuldu.")
 
-            folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_sicaklik']), fill=True, fill_opacity=0.8, tooltip=tooltip_sicaklik).add_to(m_sicaklik)
-            folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_nem']), fill=True, fill_opacity=0.8, tooltip=tooltip_nem).add_to(m_nem)
-            folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['puan_egim']), fill=True, fill_opacity=0.8, tooltip=tooltip_egim).add_to(m_egim)
-            folium.CircleMarker(location=[row['lat'], row['lon']], radius=5, color=get_color(row['Genel_Skor']), fill=True, fill_opacity=0.8, tooltip=tooltip_toplu).add_to(m_toplu)
-
-        # Haritaları HTML'e çevir
+        # ** MANTIK DÜZELTMESİ: 5 haritayı da her zaman HTML'e çevir **
+        map_htmls['base'] = m_base._repr_html_()
         map_htmls['sicaklik'] = m_sicaklik._repr_html_()
         map_htmls['nem'] = m_nem._repr_html_()
         map_htmls['egim'] = m_egim._repr_html_()
@@ -196,10 +198,10 @@ def index():
 
     except Exception as e:
         print(f"HATA: Haritalar oluşturulamadı. Hata: {e}")
-        # Hata olursa en azından ana haritayı göster (zaten try içinde oluşturuldu)
+        # Hata olursa en azından ana haritayı göster
         if 'base' not in map_htmls:
-             # Eğer ana harita bile oluşmadıysa, boş bir sayfa döndür
-             return render_template('index.html', ilceler=ILCE_LISTESI, maps={}, error=str(e))
+             m_base = create_base_map()
+             map_htmls['base'] = m_base._repr_html_()
         return render_template('index.html', ilceler=ILCE_LISTESI, maps=map_htmls, error=str(e))
         
     # Her şey başarılıysa, tüm haritaları göster
