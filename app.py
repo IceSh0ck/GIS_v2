@@ -42,20 +42,24 @@ def get_color(puan):
     if puan > 1.5: return 'lightred'
     return 'darkred'
 
-# --- Ankara İlçe Verisini Yükle ---
+# --- YENİ GÜNCEL İLÇE LİSTESİ ---
+# İlçe listesini artık doğrudan buraya yazıyoruz.
+ILCE_LISTESI = [
+    "Akyurt","Altındağ","Ayaş","Bala","Beypazarı","Çamlıdere","Çankaya",
+    "Çubuk","Elmadağ","Etimesgut","Evren","Gölbaşı","Güdül","Haymana",
+    "Kalecik","Kazan","Keçiören","Kızılcahamam","Mamak","Nallıhan",
+    "Polatlı","Pursaklar","Şereflikoçhisar","Sincan","Yenimahalle"
+]
+# ------------------------------------
+
+# --- Ankara İlçe Verisini Yükle (Sadece Harita Çizimi İçin) ---
 # static/ankara_ilceler.geojson dosyasını okur
 try:
     geojson_path = os.path.join(app.static_folder, 'ankara_ilceler.geojson')
     ankara_ilceler_gdf = gpd.read_file(geojson_path)
-    # GeoPandas dosyasından ilçe isimlerini çekiyoruz
-    # Sizin dosyanızdaki ilçe isim sütunu 'NAME' veya 'ilce_adi' olabilir.
-    # Burayı kendi GeoJSON dosyanıza göre düzeltmeniz gerekebilir.
-    # 'NAME' sütununun var olduğunu varsayıyorum.
-    ILCE_LISTESI = sorted(ankara_ilceler_gdf['NAME'].unique().tolist())
 except Exception as e:
-    print(f"HATA: GeoJSON dosyası okunamadı. 'static/ankara_ilceler.geojson' dosyasının varlığından ve 'NAME' sütunundan emin olun. Hata: {e}")
-    ILCE_LISTESI = ["İlçe Dosyası Yüklenemedi"]
-    ankara_ilceler_gdf = None
+    print(f"UYARI: 'static/ankara_ilceler.geojson' dosyası okunamadı veya bulunamadı. Haritada ilçe sınırları GÖRÜNMEYECEK. Hata: {e}")
+    ankara_ilceler_gdf = None # Kodun çökmesini engelle, None olarak devam et
 
 # --- Ana Rota (Kontrol Paneli ve Haritalar) ---
 @app.route('/', methods=['GET', 'POST'])
@@ -67,7 +71,7 @@ def index():
     # Temel Ankara Haritasını Oluştur
     m_base = folium.Map(location=[39.93, 32.85], zoom_start=9)
     
-    # Eğer GeoJSON yüklendiyse sınırları haritaya ekle
+    # Eğer GeoJSON başarıyla yüklendiyse sınırları haritaya ekle
     if ankara_ilceler_gdf is not None:
         folium.GeoJson(
             ankara_ilceler_gdf,
@@ -109,7 +113,6 @@ def index():
                     folium.GeoJson(ankara_ilceler_gdf, style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1}).add_to(m_egim)
                     folium.GeoJson(ankara_ilceler_gdf, style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1}).add_to(m_toplu)
 
-
                 # Her bir noktayı haritalara puanına göre işle
                 for _, row in df.iterrows():
                     # Tooltip (üzerine gelince görünecek bilgi)
@@ -133,7 +136,7 @@ def index():
 
                     folium.CircleMarker(
                         location=[row['lat'], row['lon']], radius=5,
-                        color=get_color(row['Puan_Eğim']), fill=True, fill_opacity=0.8,
+                        color=get_color(row['Puan_Egim']), fill=True, fill_opacity=0.8,
                         tooltip=tooltip_egim
                     ).add_to(m_egim)
 
