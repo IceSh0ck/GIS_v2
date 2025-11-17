@@ -116,15 +116,10 @@
         <h2>Harita Katmanları</h2>
         <ul>
             <li class="map-nav-link" data-map="base">Ana Harita (İlçe Sınırları)</li>
-            
-            {% if maps.toplu %}
             <li class="map-nav-link" data-map="toplu">Harita 4: Genel Uygunluk Skoru</li>
             <li class="map-nav-link" data-map="sicaklik">Harita 1: Sıcaklık (Radyasyon)</li>
             <li class="map-nav-link" data-map="nem">Harita 2: Nem Puanı</li>
             <li class="map-nav-link" data-map="egim">Harita 3: Eğim Puanı</li>
-            {% else %}
-            <li>Analiz için veri yükleyin.</li>
-            {% endif %}
         </ul>
     </div>
 
@@ -135,29 +130,21 @@
             {% if maps.base %}{{ maps.base | safe }}{% endif %}
         </div>
         
-        {% if maps.toplu %}
         <div id="map-toplu" class="map-wrapper" style="display: none;">
-            {{ maps.toplu | safe }}
+            {% if maps.toplu %}{{ maps.toplu | safe }}{% endif %}
         </div>
-        {% endif %}
 
-        {% if maps.sicaklik %}
         <div id="map-sicaklik" class="map-wrapper" style="display: none;">
-            {{ maps.sicaklik | safe }}
+            {% if maps.sicaklik %}{{ maps.sicaklik | safe }}{% endif %}
         </div>
-        {% endif %}
 
-        {% if maps.nem %}
         <div id="map-nem" class="map-wrapper" style="display: none;">
-            {{ maps.nem | safe }}
+            {% if maps.nem %}{{ maps.nem | safe }}{% endif %}
         </div>
-        {% endif %}
         
-        {% if maps.egim %}
         <div id="map-egim" class="map-wrapper" style="display: none;">
-            {{ maps.egim | safe }}
+            {% if maps.egim %}{{ maps.egim | safe }}{% endif %}
         </div>
-        {% endif %}
     </div>
 
     <div id="right-sidebar">
@@ -204,24 +191,38 @@
             navLinks.forEach(link => {
                 link.addEventListener('click', function() {
                     const mapIdToShow = this.getAttribute('data-map');
+                    
+                    // Önce tüm haritaları gizle
                     mapWrappers.forEach(wrapper => {
-                        wrapper.style.display = 'none';
+                        if (wrapper) { // wrapper'ın var olup olmadığını kontrol et
+                           wrapper.style.display = 'none';
+                        }
                     });
+
+                    // Tüm linklerin 'active' class'ını kaldır
                     navLinks.forEach(nav => {
                         nav.classList.remove('active');
                     });
-                    document.getElementById('map-' + mapIdToShow).style.display = 'block';
+
+                    // Sadece tıklanan haritayı göster
+                    const mapToShow = document.getElementById('map-' + mapIdToShow);
+                    if (mapToShow) { // Haritanın var olup olmadığını kontrol et
+                        mapToShow.style.display = 'block';
+                    }
+                    
+                    // Sadece tıklanan linki 'active' yap
                     this.classList.add('active');
                 });
             });
 
-            {% if maps.toplu %}
-                document.querySelector('.map-nav-link[data-map="toplu"]').click();
-            {% else %}
-                document.querySelector('.map-nav-link[data-map="base"]').click();
-            {% endif %}
+            // ** MANTIK DÜZELTMESİ: **
+            // Artık her zaman 'Ana Harita'yı seçerek başla.
+            const baseMapLink = document.querySelector('.map-nav-link[data-map="base"]');
+            if (baseMapLink) {
+                baseMapLink.click();
+            }
         });
-    </SCriPT>
+    </script>
 
 </body>
 </html>
