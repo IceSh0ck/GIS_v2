@@ -1,5 +1,6 @@
 Flask
-gunicorn  # OnRender'ın Flask'ı çalıştırması için gerekli
-pandas    # CSV dosyalarını okumak ve işlemek için
-geopandas # GeoJSON dosyasını okumak için
-folium    # Haritaları oluşturmak için
+gunicorn
+pandas
+geopandas
+folium
+supabase-py
