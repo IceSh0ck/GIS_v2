@@ -7,7 +7,7 @@ from supabase import create_client, Client
 
 app = Flask(__name__)
 
-# --- Supabase Bağlantısı ---
+# --- 1. SUPABASE BAĞLANTISI ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
@@ -17,15 +17,14 @@ try:
 except Exception as e:
     print(f"HATA: Supabase anahtarları eksik veya geçersiz. Hata: {e}")
     supabase = None
-# ---------------------------
 
-# --- Ağırlıklar ---
+# --- 2. ANALİZ AYARLARI (AĞIRLIKLAR) ---
 AGIRLIK_SICAKLIK = 0.50
 AGIRLIK_NEM = 0.35
 AGIRLIK_EGIM = 0.15
 
-# --- Puanlama Fonksiyonları (1-5 arası) ---
-def puanla_sicaklik(deger): # 'deger' radyasyon
+# --- 3. PUANLAMA FONKSİYONLARI ---
+def puanla_sicaklik(deger): # Radyasyon
     try: deger = float(deger)
     except: return 1
     if deger > 2000: return 5
@@ -34,7 +33,7 @@ def puanla_sicaklik(deger): # 'deger' radyasyon
     if deger > 1400: return 2
     return 1
 
-def puanla_nem(deger): # 'deger' yüzde
+def puanla_nem(deger): # Yüzde Nem
     try: deger = float(deger)
     except: return 1
     if deger < 30: return 5  # Düşük nem GES için iyidir
@@ -43,7 +42,7 @@ def puanla_nem(deger): # 'deger' yüzde
     if deger < 60: return 2
     return 1
 
-def puanla_egim(deger): # 'deger' derece
+def puanla_egim(deger): # Derece Eğim
     try: deger = float(deger)
     except: return 1
     if deger >= 0 and deger <= 5: return 5 # İdeal eğim
@@ -64,7 +63,7 @@ PUAN_SUTUNLARI = {
 }
 
 def get_color(puan):
-    if puan is None or puan == 0: return 'gray' # Veri yoksa gri
+    if puan is None or puan == 0: return 'gray'
     if puan > 4.5: return 'darkgreen'
     if puan > 3.5: return 'green'
     if puan > 2.5: return 'orange'
@@ -74,38 +73,50 @@ def get_color(puan):
 ILCE_LISTESI = [
     "Akyurt","Altındağ","Ayaş","Bala","Beypazarı","Çamlıdere","Çankaya",
     "Çubuk","Elmadağ","Etimesgut","Evren","Gölbaşı","Güdül","Haymana",
-    "Kalecik","Kazan","Keçiören","Kızılcahamam","Mamak","Nallıhan",
+    "Kalecik","Kahramankazan","Keçiören","Kızılcahamam","Mamak","Nallıhan",
     "Polatlı","Pursaklar","Şereflikoçhisar","Sincan","Yenimahalle"
 ]
 
-# --- Ankara İlçe Verisini YÜKLE ---
+# --- 4. GEOJSON VERİSİNİ YÜKLEME ---
+# Bu veri hem ana harita çizimi hem de "İlçe Sınırlarını Getirme" API'si için gerekli.
+ankara_ilceler_gdf = None
 try:
     geojson_path = os.path.join(app.static_folder, 'ankara_ilceler.geojson')
     ankara_ilceler_gdf = gpd.read_file(geojson_path)
-    ankara_ilceler_gdf = ankara_ilceler_gdf.set_crs("EPSG:4326")
+    # Koordinat sistemini garantiye alalım
+    if ankara_ilceler_gdf.crs is None:
+        ankara_ilceler_gdf = ankara_ilceler_gdf.set_crs("EPSG:4326")
+    else:
+        ankara_ilceler_gdf = ankara_ilceler_gdf.to_crs("EPSG:4326")
+        
     print("Ankara ilçe sınırları (GDF) hafızaya yüklendi.")
     
 except Exception as e:
-    print(f"UYARI: 'static/ankara_ilceler.geojson' dosyası okunamadı. Hata: {e}")
-    ankara_ilceler_gdf = None
-# ------------------------------------
+    print(f"UYARI: 'static/ankara_ilceler.geojson' dosyası okunamadı veya hatalı. Hata: {e}")
 
+# --- 5. YARDIMCI FONKSİYONLAR ---
 def create_base_map():
     m = folium.Map(location=[39.93, 32.85], zoom_start=9)
+    # Arka planda silik ilçe sınırlarını göster (Genel görünüm için)
     if ankara_ilceler_gdf is not None:
         folium.GeoJson(
             ankara_ilceler_gdf,
             name='İlçe Sınırları',
-            style_function=lambda x: {'fillColor': 'transparent', 'color': 'black', 'weight': 1, 'fillOpacity': 0.1}
+            style_function=lambda x: {'fillColor': 'transparent', 'color': 'gray', 'weight': 1, 'fillOpacity': 0.05}
         ).add_to(m)
     return m
 
+# ==========================================
+#                  ROUTELAR
+# ==========================================
+
 @app.route('/', methods=['GET', 'POST', 'HEAD'])
 def index():
+    # Uptime kontrolü için
     if request.method == 'HEAD':
         return "", 200
 
-    # --- CSV VERİ YÜKLEME (POST) ---
+    # --- A) CSV VERİ YÜKLEME (POST) ---
     if request.method == 'POST':
         if not supabase: 
              return redirect(url_for('index'))
@@ -119,8 +130,9 @@ def index():
                 raise ValueError("Eksik form verisi.")
 
             df = pd.read_csv(file)
+            # Kolon kontrolü
             if not all(col in df.columns for col in ['lat', 'lon', 'deger']):
-                raise ValueError("CSV formatı hatalı.")
+                raise ValueError("CSV formatı hatalı. 'lat', 'lon', 'deger' sütunları gerekli.")
 
             puan_func = PUANLAMA_FONKSIYONLARI[data_type]
             puan_column_name = PUAN_SUTUNLARI[data_type]
@@ -136,6 +148,7 @@ def index():
                 }
                 data_to_upsert.append(record)
 
+            # Supabase Upsert (lat,lon çakışırsa güncelle)
             supabase.table('ges_noktalar').upsert(data_to_upsert, on_conflict='lat,lon').execute()
             print(f"CSV: {len(data_to_upsert)} adet veri yüklendi.")
 
@@ -145,44 +158,54 @@ def index():
         
         return redirect(url_for('index'))
 
-    # --- HARİTA GÖSTERİMİ (GET) ---
+    # --- B) HARİTA GÖSTERİMİ (GET) ---
     map_htmls = {}
     
     try:
+        # Boş haritaları oluştur
         m_base = create_base_map()
         m_sicaklik = create_base_map()
         m_nem = create_base_map()
         m_egim = create_base_map()
         m_toplu = create_base_map()
         
+        # Verileri çek
         df_data = pd.DataFrame() 
         if supabase:
             response = supabase.table('ges_noktalar').select("*").execute()
             if response.data:
                 df_data = pd.DataFrame(response.data)
                 
+        # Veri varsa haritaya işle
         if not df_data.empty:
-            if 'puan_sicaklik' not in df_data.columns: df_data['puan_sicaklik'] = 0
-            if 'puan_nem' not in df_data.columns: df_data['puan_nem'] = 0
-            if 'puan_egim' not in df_data.columns: df_data['puan_egim'] = 0
+            # Eksik kolonları tamamla (0 ile)
+            for col in ['puan_sicaklik', 'puan_nem', 'puan_egim']:
+                if col not in df_data.columns: df_data[col] = 0
             
             df_data.fillna(0, inplace=True)
 
+            # Genel Skor Hesabı
             df_data['Genel_Skor'] = (df_data['puan_sicaklik'] * AGIRLIK_SICAKLIK) + \
                                     (df_data['puan_nem'] * AGIRLIK_NEM) + \
                                     (df_data['puan_egim'] * AGIRLIK_EGIM)
 
+            # Noktaları haritalara ekle
             for _, row in df_data.iterrows():
-                tooltip_sicaklik = f"Sıcaklık P: {row['puan_sicaklik']}"
-                tooltip_nem = f"Nem P: {row['puan_nem']}"
-                tooltip_egim = f"Eğim P: {row['puan_egim']}"
-                tooltip_toplu = f"Genel Skor: {row['Genel_Skor']:.2f}<br>Detaylar..."
+                lat, lon = row['lat'], row['lon']
+                
+                # Tooltipler
+                t_sicaklik = f"Sıcaklık Puanı: {row['puan_sicaklik']}"
+                t_nem = f"Nem Puanı: {row['puan_nem']}"
+                t_egim = f"Eğim Puanı: {row['puan_egim']}"
+                t_toplu = f"Genel Skor: {row['Genel_Skor']:.2f}"
 
-                folium.CircleMarker([row['lat'], row['lon']], radius=5, color=get_color(row['puan_sicaklik']), fill=True, fill_opacity=0.8, tooltip=tooltip_sicaklik).add_to(m_sicaklik)
-                folium.CircleMarker([row['lat'], row['lon']], radius=5, color=get_color(row['puan_nem']), fill=True, fill_opacity=0.8, tooltip=tooltip_nem).add_to(m_nem)
-                folium.CircleMarker([row['lat'], row['lon']], radius=5, color=get_color(row['puan_egim']), fill=True, fill_opacity=0.8, tooltip=tooltip_egim).add_to(m_egim)
-                folium.CircleMarker([row['lat'], row['lon']], radius=5, color=get_color(row['Genel_Skor']), fill=True, fill_opacity=0.8, tooltip=tooltip_toplu).add_to(m_toplu)
+                # Çemberleri ekle
+                folium.CircleMarker([lat, lon], radius=5, color=get_color(row['puan_sicaklik']), fill=True, fill_opacity=0.8, tooltip=t_sicaklik).add_to(m_sicaklik)
+                folium.CircleMarker([lat, lon], radius=5, color=get_color(row['puan_nem']), fill=True, fill_opacity=0.8, tooltip=t_nem).add_to(m_nem)
+                folium.CircleMarker([lat, lon], radius=5, color=get_color(row['puan_egim']), fill=True, fill_opacity=0.8, tooltip=t_egim).add_to(m_egim)
+                folium.CircleMarker([lat, lon], radius=5, color=get_color(row['Genel_Skor']), fill=True, fill_opacity=0.8, tooltip=t_toplu).add_to(m_toplu)
 
+        # Haritaları HTML string'e çevir
         map_htmls['base'] = m_base._repr_html_()
         map_htmls['sicaklik'] = m_sicaklik._repr_html_()
         map_htmls['nem'] = m_nem._repr_html_()
@@ -190,14 +213,15 @@ def index():
         map_htmls['toplu'] = m_toplu._repr_html_()
 
     except Exception as e:
-        print(f"HATA: {e}")
+        print(f"Harita Oluşturma Hatası: {e}")
+        # Hata durumunda en azından boş base harita dönsün
         m_base = create_base_map()
         map_htmls['base'] = m_base._repr_html_()
         return render_template('index.html', ilceler=ILCE_LISTESI, maps=map_htmls, error=str(e))
         
     return render_template('index.html', ilceler=ILCE_LISTESI, maps=map_htmls)
 
-# --- YENİ: MANUEL VERİ KAYDETME ENDPOINT ---
+# --- C) YENİ: MANUEL VERİ KAYDETME (JSON API) ---
 @app.route('/save_manual_data', methods=['POST'])
 def save_manual_data():
     if not supabase:
@@ -210,7 +234,7 @@ def save_manual_data():
         points = req_data.get('points', [])
 
         if not points:
-            return jsonify({'success': False, 'error': 'Veri noktası yok'})
+            return jsonify({'success': False, 'error': 'Kaydedilecek veri noktası bulunamadı.'})
 
         puan_func = PUANLAMA_FONKSIYONLARI[data_type]
         puan_column_name = PUAN_SUTUNLARI[data_type]
@@ -233,6 +257,28 @@ def save_manual_data():
 
     except Exception as e:
         print(f"Manuel Kayıt Hatası: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+# --- D) YENİ: İLÇE SINIRINI GETİREN ENDPOINT (Zoom ve Vurgulama İçin) ---
+@app.route('/get_district_boundary/<ilce_ad>', methods=['GET'])
+def get_district_boundary(ilce_ad):
+    if ankara_ilceler_gdf is None:
+        return jsonify({'success': False, 'error': 'GeoJSON dosyası sunucuda yüklü değil.'})
+    
+    try:
+        # GeoJSON dosyasındaki "name" kolonunda ilçe adını arıyoruz.
+        # Senin gönderdiğin veride ilçe isimleri "name" property'si altındaydı.
+        district = ankara_ilceler_gdf[ankara_ilceler_gdf['name'] == ilce_ad]
+        
+        if district.empty:
+            # Bazen Türkçe karakter sorunu olabilir (Kazan -> Kahramankazan vb.)
+            # Basit bir deneme daha yapalım:
+            return jsonify({'success': False, 'error': 'İlçe bulunamadı'})
+            
+        # Bulunan ilçeyi GeoJSON string olarak döndür
+        return district.to_json()
+        
+    except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
 if __name__ == '__main__':
