@@ -18,7 +18,7 @@
             overflow: hidden;
         }
 
-        /* --- 1. Sol Menü (Harita Seçimi) --- */
+        /* --- Sol Menü --- */
         #left-sidebar {
             width: 250px;
             background: #f8f9fa;
@@ -45,7 +45,7 @@
             font-weight: 500;
         }
 
-        /* --- 2. Ana Harita Alanı (Ortası) --- */
+        /* --- Harita Alanı --- */
         #main-content {
             flex-grow: 1;
             position: relative;
@@ -68,11 +68,11 @@
         #editor-map {
             width: 100%;
             height: 100%;
-            z-index: 5; /* iframe'lerin üzerinde görünsün */
+            z-index: 5;
             background: #fff;
         }
 
-        /* --- 3. Sağ Gizli Kontrol Paneli --- */
+        /* --- Sağ Panel --- */
         #toggle-panel-button {
             position: absolute;
             top: 20px;
@@ -108,12 +108,8 @@
         
         #right-sidebar h2 { margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px; }
         
-        .panel-section {
-            margin-bottom: 20px;
-        }
-        
         form label { display: block; margin-top: 15px; font-weight: 500; color: #333; }
-        form select, form input[type="file"], form input[type="text"] {
+        form select, form input[type="file"] {
             width: 100%;
             padding: 10px;
             margin-top: 5px;
@@ -145,14 +141,14 @@
         .btn-control {
             background: #6c757d; 
             color: white; 
-            margin-top: auto; /* En alta itmek için */
+            margin-top: auto;
             display: flex;
             align-items: center;
             justify-content: center;
         }
         .btn-control:hover { background: #5a6268; }
 
-        /* Bilgi Kutusu (Manuel Giriş Sırasında) */
+        /* Bilgi Kutusu */
         #editor-info {
             position: absolute;
             top: 20px;
@@ -196,8 +192,8 @@
         <div id="editor-map" style="display: none;"></div>
         
         <div id="editor-info">
-            <span id="point-counter">0</span> Veri Girildi. Haritaya tıklayarak devam et.<br>
-            <small style="font-weight: normal; color: #666;">İşin bitince sağ panelden "Kaydet"e bas.</small>
+            <span id="point-counter">0</span> Veri Girildi. <span id="target-district" style="color:#007bff"></span> sınırları içine tıklayın.<br>
+            <small style="font-weight: normal; color: #666;">Bitince "Kaydet"e bas.</small>
         </div>
     </div>
 
@@ -211,7 +207,6 @@
                         <option value="{{ ilce }}">{{ ilce }}</option>
                     {% endfor %}
                 </select>
-
                 <label for="data_type">Veri Tipi:</label>
                 <select name="data_type" required>
                     <option value="">Seçiniz...</option>
@@ -219,10 +214,8 @@
                     <option value="nem">Nem (%)</option>
                     <option value="egim">Eğim (Derece)</option>
                 </select>
-                
                 <label for="csv_file">CSV Dosyası:</label>
                 <input type="file" name="csv_file" id="csv_file" accept=".csv" required>
-                
                 <button type="submit" class="btn btn-primary">Yükle ve Analiz Et</button>
             </form>
         </div>
@@ -230,7 +223,7 @@
         <div id="manual-entry-panel" style="display: none;">
             <h2>Manuel Kontrol Modu</h2>
             <p style="font-size: 0.9em; color: #666;">
-                İlçe ve veri tipini seçin, ardından harita üzerinde noktalara tıklayarak verileri manuel girin.
+                İlçeyi seçip "Başlat" deyin. Haritada sadece o ilçe açılacak ve siyah sınırlarla gösterilecektir.
             </p>
 
             <label for="manual_ilce">İlçe Seçin:</label>
@@ -263,13 +256,14 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // --- Değişkenler ---
+            // Değişkenler
             const rightSidebar = document.getElementById('right-sidebar');
             const csvPanel = document.getElementById('csv-upload-panel');
             const manualPanel = document.getElementById('manual-entry-panel');
             const editorMapDiv = document.getElementById('editor-map');
             const editorInfo = document.getElementById('editor-info');
             const mapWrappers = document.querySelectorAll('.map-wrapper');
+            const toggleButton = document.getElementById('toggle-panel-button');
             
             // Butonlar
             const btnShowControl = document.getElementById('btn-show-control');
@@ -277,19 +271,17 @@
             const btnStartManual = document.getElementById('btn-start-manual');
             const btnSaveManual = document.getElementById('btn-save-manual');
             const btnCancelManual = document.getElementById('btn-cancel-manual');
-            const toggleButton = document.getElementById('toggle-panel-button');
 
-            // Leaflet Harita ve Veri Değişkenleri
+            // Leaflet
             let editorMap = null;
-            let collectedData = []; // {lat, lon, deger} tutacak
-            let tempMarkers = [];   // Haritadaki geçici iğneler
+            let currentGeoJsonLayer = null; // Mevcut ilçe sınırını tutar
+            let collectedData = [];
+            let tempMarkers = [];
 
-            // --- Panel Aç/Kapa ---
-            toggleButton.addEventListener('click', () => {
-                rightSidebar.classList.toggle('open');
-            });
+            // Panel Aç/Kapa
+            toggleButton.addEventListener('click', () => rightSidebar.classList.toggle('open'));
 
-            // --- CSV ve Manuel Mod Arası Geçiş ---
+            // CSV <-> Manuel Geçiş
             btnShowControl.addEventListener('click', () => {
                 csvPanel.style.display = 'none';
                 btnShowControl.style.display = 'none';
@@ -302,160 +294,131 @@
                 manualPanel.style.display = 'none';
             });
 
-            // --- Manuel Girişi BAŞLAT ---
+            // --- MANUEL GİRİŞİ BAŞLAT ---
             btnStartManual.addEventListener('click', () => {
                 const ilce = document.getElementById('manual_ilce').value;
                 const dataType = document.getElementById('manual_data_type').value;
 
                 if(!ilce || !dataType) { alert("Lütfen İlçe ve Veri Tipi seçin."); return; }
 
-                // 1. Arayüzü hazırla
+                // Arayüzü Düzenle
                 document.getElementById('manual-controls-start').style.display = 'none';
                 document.getElementById('manual-controls-active').style.display = 'block';
                 editorInfo.style.display = 'block';
                 document.getElementById('point-counter').innerText = '0';
+                document.getElementById('target-district').innerText = ilce;
                 
-                // 2. Normal haritaları gizle, Editor haritasını aç
+                // Haritaları değiştir
                 mapWrappers.forEach(el => el.style.display = 'none');
                 editorMapDiv.style.display = 'block';
 
-                // 3. Leaflet Haritasını Başlat (Eğer yoksa)
+                // Harita Oluşturma
                 if (!editorMap) {
                     editorMap = L.map('editor-map').setView([39.93, 32.85], 9);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; OpenStreetMap contributors'
+                        attribution: '&copy; OpenStreetMap'
                     }).addTo(editorMap);
-                    
-                    // Ankara sınırlarını yükle (Görsel referans için)
-                    fetch('/static/ankara_ilceler.geojson')
-                        .then(res => res.json())
-                        .then(data => {
-                            L.geoJSON(data, {
-                                style: { color: "#3388ff", weight: 2, fillOpacity: 0.1 }
-                            }).addTo(editorMap);
-                        });
-                    
-                    // --- TIKLAMA OLAYI (Veri Girişi) ---
+
+                    // Tıklama Olayı
                     editorMap.on('click', function(e) {
-                        const lat = e.latlng.lat;
-                        const lon = e.latlng.lng;
-                        
-                        // Kullanıcıdan değer iste
-                        const val = prompt(`Bu nokta için "${dataType.toUpperCase()}" değeri girin:`);
-                        
+                        const val = prompt(`"${ilce}" için ${dataType} değeri:`);
                         if (val !== null && val !== "") {
                             const numVal = parseFloat(val);
-                            if(isNaN(numVal)) {
-                                alert("Lütfen sayısal bir değer girin!");
-                                return;
-                            }
+                            if(isNaN(numVal)) { alert("Sayı girin!"); return; }
 
-                            // 1. Veriyi kaydet
-                            collectedData.push({
-                                lat: lat,
-                                lon: lon,
-                                deger: numVal
-                            });
-
-                            // 2. Haritaya geçici iğne koy
-                            const marker = L.marker([lat, lon])
-                                .addTo(editorMap)
-                                .bindPopup(`<b>${numVal}</b>`)
-                                .openPopup();
+                            collectedData.push({ lat: e.latlng.lat, lon: e.latlng.lng, deger: numVal });
+                            const marker = L.marker([e.latlng.lat, e.latlng.lng]).addTo(editorMap)
+                                .bindPopup(`<b>${numVal}</b>`).openPopup();
                             tempMarkers.push(marker);
-
-                            // 3. Sayacı güncelle
                             document.getElementById('point-counter').innerText = collectedData.length;
                         }
                     });
                 } else {
-                    // Harita zaten varsa sadece boyutunu güncelle
-                    setTimeout(() => { editorMap.invalidateSize(); }, 100);
+                    editorMap.invalidateSize();
                 }
+
+                // --- ÖNEMLİ KISIM: SEÇİLEN İLÇE SINIRINI ÇEK ---
+                // Eski katmanı temizle
+                if (currentGeoJsonLayer) {
+                    editorMap.removeLayer(currentGeoJsonLayer);
+                }
+
+                fetch(`/get_district_boundary/${ilce}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if(data.success === false) {
+                            alert("İlçe sınırı yüklenemedi: " + data.error);
+                            return;
+                        }
+                        
+                        // Sadece o ilçeyi ekle
+                        currentGeoJsonLayer = L.geoJSON(data, {
+                            style: {
+                                color: "black",      // İstenilen SİYAH renk
+                                weight: 4,           // Kalınlık (Belirgin)
+                                opacity: 1,
+                                fillOpacity: 0.1,    // İçi hafif transparan
+                                fillColor: "#000"
+                            }
+                        }).addTo(editorMap);
+
+                        // Haritayı o ilçeye odakla (Zoom)
+                        editorMap.fitBounds(currentGeoJsonLayer.getBounds());
+                    })
+                    .catch(err => console.error("GeoJSON hatası:", err));
             });
 
-            // --- KAYDET (Sunucuya Gönder) ---
+            // --- KAYDET ---
             btnSaveManual.addEventListener('click', () => {
-                if (collectedData.length === 0) {
-                    alert("Hiç veri girmediniz!");
-                    return;
-                }
-
+                if (collectedData.length === 0) { alert("Veri girmediniz!"); return; }
+                
                 const ilce = document.getElementById('manual_ilce').value;
                 const dataType = document.getElementById('manual_data_type').value;
 
-                // Veriyi JSON olarak hazırla
-                const payload = {
-                    ilce: ilce,
-                    data_type: dataType,
-                    points: collectedData
-                };
-
-                // Fetch ile POST et
                 fetch('/save_manual_data', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ilce: ilce, data_type: dataType, points: collectedData })
                 })
-                .then(response => response.json())
-                .then(data => {
-                    if(data.success) {
-                        alert(data.message);
-                        window.location.reload(); // Sayfayı yenile ki yeni analiz haritası gelsin
-                    } else {
-                        alert("Hata oluştu: " + data.error);
-                    }
-                })
-                .catch(err => {
-                    alert("Sunucu hatası: " + err);
+                .then(r => r.json())
+                .then(d => {
+                    if(d.success) { alert(d.message); window.location.reload(); }
+                    else { alert("Hata: " + d.error); }
                 });
             });
 
-            // --- İPTAL (Temizle ve Çık) ---
+            // --- İPTAL ---
             btnCancelManual.addEventListener('click', () => {
-                // Verileri sıfırla
                 collectedData = [];
                 tempMarkers.forEach(m => editorMap.removeLayer(m));
                 tempMarkers = [];
-
-                // Arayüzü eski haline getir
+                if(currentGeoJsonLayer) editorMap.removeLayer(currentGeoJsonLayer); // Sınırı kaldır
+                
                 document.getElementById('manual-controls-start').style.display = 'block';
                 document.getElementById('manual-controls-active').style.display = 'none';
                 editorInfo.style.display = 'none';
                 editorMapDiv.style.display = 'none';
-                
-                // Ana haritayı geri getir
                 document.querySelector('.map-nav-link.active').click();
             });
 
-            // --- Sidebar Navigasyon Mantığı (Mevcut Kod) ---
+            // Navigasyon
             const navLinks = document.querySelectorAll('.map-nav-link');
             navLinks.forEach(link => {
                 link.addEventListener('click', function() {
-                    const mapIdToShow = this.getAttribute('data-map');
-                    
-                    // Eğer Editor açıksa kapat
+                    const mapId = this.getAttribute('data-map');
                     editorMapDiv.style.display = 'none';
-
-                    mapWrappers.forEach(wrapper => {
-                        if (wrapper) wrapper.style.display = 'none';
-                    });
-                    navLinks.forEach(nav => nav.classList.remove('active'));
-
-                    const mapToShow = document.getElementById('map-' + mapIdToShow);
-                    if (mapToShow) mapToShow.style.display = 'block';
-                    
+                    mapWrappers.forEach(w => w.style.display = 'none');
+                    navLinks.forEach(n => n.classList.remove('active'));
+                    const target = document.getElementById('map-' + mapId);
+                    if(target) target.style.display = 'block';
                     this.classList.add('active');
                 });
             });
-
-            // Başlangıçta ana haritayı seç
-            const baseMapLink = document.querySelector('.map-nav-link[data-map="base"]');
-            if (baseMapLink) baseMapLink.click();
+            
+            // Başlangıç
+            const baseLink = document.querySelector('.map-nav-link[data-map="base"]');
+            if(baseLink) baseLink.click();
         });
     </script>
-
 </body>
 </html>
